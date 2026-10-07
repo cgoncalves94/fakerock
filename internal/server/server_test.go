@@ -281,6 +281,41 @@ func TestConverseForwardsOutputConfigAsResponseFormat(t *testing.T) {
 	}
 }
 
+// Effort and other model-specific settings travel in additionalModelRequestFields. A gateway in
+// front of Bedrock only sees them if they reach the backend request.
+func TestConverseForwardsAdditionalModelRequestFields(t *testing.T) {
+	backend := &stubBackend{resp: openai.ChatResponse{
+		Choices: []openai.Choice{{Message: openai.Message{Content: "ok"}, FinishReason: openai.FinishReasonStop}},
+	}}
+	srv := newTestServer(t, backend)
+
+	body := `{"messages":[{"role":"user","content":[{"text":"hi"}]}],` +
+		`"additionalModelRequestFields":{"output_config":{"effort":"low"}}}`
+	rec := post(t, srv, "/model/sonnet/converse", body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if got := string(backend.got.Extra["output_config"]); got != `{"effort":"low"}` {
+		t.Errorf("output_config = %s, want {\"effort\":\"low\"}", got)
+	}
+}
+
+func TestConverseRejectsConflictingAdditionalModelRequestFields(t *testing.T) {
+	backend := &stubBackend{}
+	srv := newTestServer(t, backend)
+
+	body := `{"messages":[{"role":"user","content":[{"text":"hi"}]}],` +
+		`"inferenceConfig":{"maxTokens":512},` +
+		`"additionalModelRequestFields":{"max_tokens":5}}`
+	rec := post(t, srv, "/model/sonnet/converse", body)
+
+	assertAWSError(t, rec, http.StatusBadRequest, errValidation)
+	if backend.got.Model != "" {
+		t.Error("backend was called for a request that should have been rejected")
+	}
+}
+
 // Bedrock's default outputConfig.textFormat.type is "text"; forwarding a synthetic
 // response_format for that case would silently force JSON on callers who never asked
 // for it. Absent outputConfig should behave the same as an explicit "text" type.

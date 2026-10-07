@@ -12,6 +12,8 @@ type ConverseRequest struct {
 	InferenceConfig *InferenceConfig `json:"inferenceConfig"`
 	ToolConfig      *ToolConfig      `json:"toolConfig"`
 	OutputConfig    *OutputConfig    `json:"outputConfig,omitempty"`
+	// Model-specific fields Bedrock merges into the model's native request body.
+	AdditionalModelRequestFields json.RawMessage `json:"additionalModelRequestFields,omitempty"`
 }
 
 type Message struct {

@@ -134,3 +134,35 @@ func TestConverseStreamRejectsEmptyMessages(t *testing.T) {
 
 	assertAWSError(t, rec, http.StatusBadRequest, errValidation)
 }
+
+func TestConverseStreamForwardsAdditionalModelRequestFields(t *testing.T) {
+	backend := &stubBackend{resp: openai.ChatResponse{
+		Choices: []openai.Choice{{Message: openai.Message{Content: "ok"}, FinishReason: openai.FinishReasonStop}},
+	}}
+	srv := newTestServer(t, backend)
+
+	body := `{"messages":[{"role":"user","content":[{"text":"hi"}]}],` +
+		`"additionalModelRequestFields":{"output_config":{"effort":"low"}}}`
+	rec := post(t, srv, "/model/sonnet/converse-stream", body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+	if got := string(backend.got.Extra["output_config"]); got != `{"effort":"low"}` {
+		t.Errorf("output_config = %s, want {\"effort\":\"low\"}", got)
+	}
+}
+
+func TestConverseStreamRejectsConflictingAdditionalModelRequestFields(t *testing.T) {
+	backend := &stubBackend{}
+	srv := newTestServer(t, backend)
+
+	body := `{"messages":[{"role":"user","content":[{"text":"hi"}]}],` +
+		`"additionalModelRequestFields":{"model":"other"}}`
+	rec := post(t, srv, "/model/sonnet/converse-stream", body)
+
+	assertAWSError(t, rec, http.StatusBadRequest, errValidation)
+	if backend.got.Model != "" {
+		t.Error("backend was called for a request that should have been rejected")
+	}
+}

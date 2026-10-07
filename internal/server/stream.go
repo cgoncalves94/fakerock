@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
@@ -35,7 +37,8 @@ func (s *Server) handleConverseStream(w http.ResponseWriter, r *http.Request, mo
 	}
 
 	slog.Info("converse-stream", "modelId", modelID, "model", model,
-		"messages", len(chatReq.Messages), "tools", len(chatReq.Tools))
+		"messages", len(chatReq.Messages), "tools", len(chatReq.Tools),
+		"additionalFields", slices.Sorted(maps.Keys(chatReq.Extra)))
 
 	start := time.Now()
 	chatResp, err := s.backend.Chat(r.Context(), chatReq)

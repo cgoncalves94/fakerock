@@ -12,6 +12,26 @@ type ChatRequest struct {
 	TopP           *float64        `json:"top_p,omitempty"`
 	Stop           []string        `json:"stop,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	// Extra holds model-specific fields sent as top-level keys of the request body. A gateway
+	// in front of Bedrock, such as LiteLLM, puts them back into additionalModelRequestFields.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON appends Extra to the encoded struct. ToOpenAI rejects Extra keys the struct already
+// encodes, so the result never holds the same key twice.
+func (r ChatRequest) MarshalJSON() ([]byte, error) {
+	type chatRequest ChatRequest
+	body, err := json.Marshal(chatRequest(r))
+	if err != nil || len(r.Extra) == 0 {
+		return body, err
+	}
+	extra, err := json.Marshal(r.Extra)
+	if err != nil {
+		return nil, err
+	}
+	// Both are JSON objects: drop the struct's closing brace and Extra's opening one, join with a comma.
+	merged := append(body[:len(body)-1], ',')
+	return append(merged, extra[1:]...), nil
 }
 
 type ResponseFormat struct {

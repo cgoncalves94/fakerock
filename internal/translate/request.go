@@ -62,7 +62,47 @@ func ToOpenAI(model string, req bedrock.ConverseRequest) (openai.ChatRequest, er
 		out.ResponseFormat = rf
 	}
 
+	extra, err := additionalFields(req.AdditionalModelRequestFields, out)
+	if err != nil {
+		return openai.ChatRequest{}, err
+	}
+	out.Extra = extra
+
 	return out, nil
+}
+
+// additionalFields unpacks additionalModelRequestFields into top-level keys for the backend.
+// Bedrock treats the object as opaque and merges it into the model's native request, so its
+// values are forwarded without interpretation. Two kinds of key are rejected: one the translated
+// request already has, which would silently override it, and n or stream_options, which change
+// the shape of the reply fakerock reads.
+func additionalFields(raw json.RawMessage, translated openai.ChatRequest) (map[string]json.RawMessage, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, fmt.Errorf("additionalModelRequestFields must be a JSON object: %w", err)
+	}
+
+	body, err := json.Marshal(translated)
+	if err != nil {
+		return nil, fmt.Errorf("encoding translated request: %w", err)
+	}
+	var alreadySet map[string]json.RawMessage
+	if err := json.Unmarshal(body, &alreadySet); err != nil {
+		return nil, fmt.Errorf("decoding translated request: %w", err)
+	}
+
+	for key := range fields {
+		if _, ok := alreadySet[key]; ok {
+			return nil, fmt.Errorf("additionalModelRequestFields.%s conflicts with a field fakerock sets", key)
+		}
+		if key == "n" || key == "stream_options" {
+			return nil, fmt.Errorf("additionalModelRequestFields.%s is not supported", key)
+		}
+	}
+	return fields, nil
 }
 
 // translateOutputFormat converts Bedrock's outputConfig.textFormat into OpenAI's

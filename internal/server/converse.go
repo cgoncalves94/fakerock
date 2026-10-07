@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/saltpay/fakerock/internal/bedrock"
@@ -30,7 +32,7 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request, modelID 
 
 	slog.Info("converse", "modelId", modelID, "model", model,
 		"messages", len(chatReq.Messages), "tools", len(chatReq.Tools),
-		"additionalFields", string(req.AdditionalModelRequestFields))
+		"additionalFields", slices.Sorted(maps.Keys(chatReq.Extra)))
 
 	start := time.Now()
 	chatResp, err := s.backend.Chat(r.Context(), chatReq)

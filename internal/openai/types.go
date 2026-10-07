@@ -17,20 +17,21 @@ type ChatRequest struct {
 	Extra map[string]json.RawMessage `json:"-"`
 }
 
+// MarshalJSON appends Extra to the encoded struct. ToOpenAI rejects Extra keys the struct already
+// encodes, so the result never holds the same key twice.
 func (r ChatRequest) MarshalJSON() ([]byte, error) {
 	type chatRequest ChatRequest
 	body, err := json.Marshal(chatRequest(r))
 	if err != nil || len(r.Extra) == 0 {
 		return body, err
 	}
-	var merged map[string]json.RawMessage
-	if err := json.Unmarshal(body, &merged); err != nil {
+	extra, err := json.Marshal(r.Extra)
+	if err != nil {
 		return nil, err
 	}
-	for key, value := range r.Extra {
-		merged[key] = value
-	}
-	return json.Marshal(merged)
+	// Both are JSON objects: drop the struct's closing brace and Extra's opening one, join with a comma.
+	merged := append(body[:len(body)-1], ',')
+	return append(merged, extra[1:]...), nil
 }
 
 type ResponseFormat struct {

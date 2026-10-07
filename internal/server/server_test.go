@@ -306,6 +306,7 @@ func TestConverseRejectsConflictingAdditionalModelRequestFields(t *testing.T) {
 	srv := newTestServer(t, backend)
 
 	body := `{"messages":[{"role":"user","content":[{"text":"hi"}]}],` +
+		`"inferenceConfig":{"maxTokens":512},` +
 		`"additionalModelRequestFields":{"max_tokens":5}}`
 	rec := post(t, srv, "/model/sonnet/converse", body)
 

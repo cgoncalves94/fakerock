@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/saltpay/fakerock/internal/bedrock"
@@ -63,7 +62,7 @@ func ToOpenAI(model string, req bedrock.ConverseRequest) (openai.ChatRequest, er
 		out.ResponseFormat = rf
 	}
 
-	extra, err := additionalFields(req.AdditionalModelRequestFields)
+	extra, err := additionalFields(req.AdditionalModelRequestFields, out)
 	if err != nil {
 		return openai.ChatRequest{}, err
 	}
@@ -74,22 +73,33 @@ func ToOpenAI(model string, req bedrock.ConverseRequest) (openai.ChatRequest, er
 
 // additionalFields unpacks additionalModelRequestFields into top-level keys for the backend.
 // Bedrock treats the object as opaque and merges it into the model's native request, so its
-// values are forwarded without interpretation. A key that ToOpenAI already writes is rejected,
-// because it would silently override the translated value.
-func additionalFields(raw json.RawMessage) (map[string]json.RawMessage, error) {
+// values are forwarded without interpretation. Two kinds of key are rejected: one the translated
+// request already has, which would silently override it, and n or stream_options, which change
+// the shape of the reply fakerock reads.
+func additionalFields(raw json.RawMessage, translated openai.ChatRequest) (map[string]json.RawMessage, error) {
 	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, nil
 	}
-	fieldsSetByFakerock := []string{
-		"model", "messages", "tools", "stream", "max_tokens", "temperature", "top_p", "stop", "response_format",
-	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, fmt.Errorf("additionalModelRequestFields must be a JSON object")
+		return nil, fmt.Errorf("additionalModelRequestFields must be a JSON object: %w", err)
 	}
+
+	body, err := json.Marshal(translated)
+	if err != nil {
+		return nil, fmt.Errorf("encoding translated request: %w", err)
+	}
+	var alreadySet map[string]json.RawMessage
+	if err := json.Unmarshal(body, &alreadySet); err != nil {
+		return nil, fmt.Errorf("decoding translated request: %w", err)
+	}
+
 	for key := range fields {
-		if slices.Contains(fieldsSetByFakerock, key) {
+		if _, ok := alreadySet[key]; ok {
 			return nil, fmt.Errorf("additionalModelRequestFields.%s conflicts with a field fakerock sets", key)
+		}
+		if key == "n" || key == "stream_options" {
+			return nil, fmt.Errorf("additionalModelRequestFields.%s is not supported", key)
 		}
 	}
 	return fields, nil

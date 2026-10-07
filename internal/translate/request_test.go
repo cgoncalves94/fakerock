@@ -400,13 +400,58 @@ func TestToOpenAIWithoutAdditionalFieldsBodyUnchanged(t *testing.T) {
 }
 
 func TestToOpenAIAdditionalFieldsRejectsConflict(t *testing.T) {
+	maxTokens := 512
+	for name, req := range map[string]bedrock.ConverseRequest{
+		"max_tokens set by inferenceConfig": {
+			Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+			InferenceConfig:              &bedrock.InferenceConfig{MaxTokens: &maxTokens},
+			AdditionalModelRequestFields: json.RawMessage(`{"max_tokens":5}`),
+		},
+		"model is always set": {
+			Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+			AdditionalModelRequestFields: json.RawMessage(`{"model":"other"}`),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ToOpenAI("qwen3", req); err == nil {
+				t.Fatal("expected an error for an additional field that overrides a translated one")
+			}
+		})
+	}
+}
+
+func TestToOpenAIAdditionalFieldsAllowsFieldFakerockDidNotSet(t *testing.T) {
 	req := bedrock.ConverseRequest{
 		Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
-		AdditionalModelRequestFields: json.RawMessage(`{"max_tokens":5}`),
+		AdditionalModelRequestFields: json.RawMessage(`{"temperature":0.2}`),
 	}
 
-	if _, err := ToOpenAI("qwen3", req); err == nil {
-		t.Fatal("expected an error for an additional field that overrides max_tokens")
+	got, err := ToOpenAI("qwen3", req)
+	if err != nil {
+		t.Fatalf("ToOpenAI: %v", err)
+	}
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if n := bytes.Count(body, []byte(`"temperature"`)); n != 1 {
+		t.Errorf("temperature appears %d times in %s, want 1", n, body)
+	}
+	if !bytes.Contains(body, []byte(`"temperature":0.2`)) {
+		t.Errorf("body = %s, want temperature 0.2", body)
+	}
+}
+
+func TestToOpenAIAdditionalFieldsRejectsReplyShapeFields(t *testing.T) {
+	for _, raw := range []string{`{"n":2}`, `{"stream_options":{"include_usage":true}}`} {
+		req := bedrock.ConverseRequest{
+			Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+			AdditionalModelRequestFields: json.RawMessage(raw),
+		}
+
+		if _, err := ToOpenAI("qwen3", req); err == nil {
+			t.Errorf("expected an error for additionalModelRequestFields %s", raw)
+		}
 	}
 }
 

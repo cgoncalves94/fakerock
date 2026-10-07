@@ -125,8 +125,8 @@ silently dropped. `type: text` (Bedrock's default) stays a no-op; anything else 
 `additionalModelRequestFields` is sent to the backend as top-level fields of the chat request. A
 gateway in front of Bedrock, such as LiteLLM, puts them back into `additionalModelRequestFields`, so
 settings like `{"output_config":{"effort":"low"}}` reach the real model. llama.cpp and Ollama ignore
-fields they do not know. A key that clashes with a field fakerock sets itself (`max_tokens`,
-`temperature`, `messages`, ...) returns `400`.
+fields they do not know. A key the translated request already has (`messages` always, `max_tokens`
+when `inferenceConfig.maxTokens` is set) returns `400`, and so do `n` and `stream_options`.
 
 `cachePoint` and `guardrailConfig` are accepted and ignored. Token counts are real numbers from the
 backend. Cache token counts are always zero.

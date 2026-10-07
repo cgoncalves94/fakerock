@@ -29,7 +29,8 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request, modelID 
 	}
 
 	slog.Info("converse", "modelId", modelID, "model", model,
-		"messages", len(chatReq.Messages), "tools", len(chatReq.Tools))
+		"messages", len(chatReq.Messages), "tools", len(chatReq.Tools),
+		"additionalFields", string(req.AdditionalModelRequestFields))
 
 	start := time.Now()
 	chatResp, err := s.backend.Chat(r.Context(), chatReq)

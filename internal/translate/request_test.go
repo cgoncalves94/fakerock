@@ -345,3 +345,80 @@ func TestToOpenAIOutputConfigRejectsUnknownType(t *testing.T) {
 		t.Fatal("expected an error for an unknown textFormat type")
 	}
 }
+
+func TestToOpenAIAdditionalFieldsForwarded(t *testing.T) {
+	req := bedrock.ConverseRequest{
+		Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+		AdditionalModelRequestFields: json.RawMessage(`{"output_config":{"effort":"low"},"top_k":5}`),
+	}
+
+	got, err := ToOpenAI("qwen3", req)
+	if err != nil {
+		t.Fatalf("ToOpenAI: %v", err)
+	}
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(fields["output_config"]) != `{"effort":"low"}` {
+		t.Errorf("output_config = %s, want {\"effort\":\"low\"}", fields["output_config"])
+	}
+	if string(fields["top_k"]) != `5` {
+		t.Errorf("top_k = %s, want 5", fields["top_k"])
+	}
+	if string(fields["model"]) != `"qwen3"` {
+		t.Errorf("model = %s, want \"qwen3\"", fields["model"])
+	}
+}
+
+func TestToOpenAIWithoutAdditionalFieldsBodyUnchanged(t *testing.T) {
+	for name, raw := range map[string]json.RawMessage{"absent": nil, "null": json.RawMessage(`null`)} {
+		t.Run(name, func(t *testing.T) {
+			req := bedrock.ConverseRequest{
+				Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+				AdditionalModelRequestFields: raw,
+			}
+
+			got, err := ToOpenAI("qwen3", req)
+			if err != nil {
+				t.Fatalf("ToOpenAI: %v", err)
+			}
+			body, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			want := `{"model":"qwen3","messages":[{"role":"user","content":"hi"}],"stream":false}`
+			if string(body) != want {
+				t.Errorf("body = %s, want %s", body, want)
+			}
+		})
+	}
+}
+
+func TestToOpenAIAdditionalFieldsRejectsConflict(t *testing.T) {
+	req := bedrock.ConverseRequest{
+		Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+		AdditionalModelRequestFields: json.RawMessage(`{"max_tokens":5}`),
+	}
+
+	if _, err := ToOpenAI("qwen3", req); err == nil {
+		t.Fatal("expected an error for an additional field that overrides max_tokens")
+	}
+}
+
+func TestToOpenAIAdditionalFieldsRejectsNonObject(t *testing.T) {
+	for _, raw := range []string{`"x"`, `[1]`, `5`} {
+		req := bedrock.ConverseRequest{
+			Messages:                     []bedrock.Message{{Role: "user", Content: []bedrock.ContentBlock{{Text: text("hi")}}}},
+			AdditionalModelRequestFields: json.RawMessage(raw),
+		}
+
+		if _, err := ToOpenAI("qwen3", req); err == nil {
+			t.Errorf("expected an error for additionalModelRequestFields %s", raw)
+		}
+	}
+}

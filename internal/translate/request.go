@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/saltpay/fakerock/internal/bedrock"
@@ -62,7 +63,36 @@ func ToOpenAI(model string, req bedrock.ConverseRequest) (openai.ChatRequest, er
 		out.ResponseFormat = rf
 	}
 
+	extra, err := additionalFields(req.AdditionalModelRequestFields)
+	if err != nil {
+		return openai.ChatRequest{}, err
+	}
+	out.Extra = extra
+
 	return out, nil
+}
+
+// additionalFields unpacks additionalModelRequestFields into top-level keys for the backend.
+// Bedrock treats the object as opaque and merges it into the model's native request, so its
+// values are forwarded without interpretation. A key that ToOpenAI already writes is rejected,
+// because it would silently override the translated value.
+func additionalFields(raw json.RawMessage) (map[string]json.RawMessage, error) {
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+	fieldsSetByFakerock := []string{
+		"model", "messages", "tools", "stream", "max_tokens", "temperature", "top_p", "stop", "response_format",
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, fmt.Errorf("additionalModelRequestFields must be a JSON object")
+	}
+	for key := range fields {
+		if slices.Contains(fieldsSetByFakerock, key) {
+			return nil, fmt.Errorf("additionalModelRequestFields.%s conflicts with a field fakerock sets", key)
+		}
+	}
+	return fields, nil
 }
 
 // translateOutputFormat converts Bedrock's outputConfig.textFormat into OpenAI's

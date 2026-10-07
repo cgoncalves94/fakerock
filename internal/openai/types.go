@@ -12,6 +12,25 @@ type ChatRequest struct {
 	TopP           *float64        `json:"top_p,omitempty"`
 	Stop           []string        `json:"stop,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	// Extra holds model-specific fields sent as top-level keys of the request body. A gateway
+	// in front of Bedrock, such as LiteLLM, puts them back into additionalModelRequestFields.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+func (r ChatRequest) MarshalJSON() ([]byte, error) {
+	type chatRequest ChatRequest
+	body, err := json.Marshal(chatRequest(r))
+	if err != nil || len(r.Extra) == 0 {
+		return body, err
+	}
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(body, &merged); err != nil {
+		return nil, err
+	}
+	for key, value := range r.Extra {
+		merged[key] = value
+	}
+	return json.Marshal(merged)
 }
 
 type ResponseFormat struct {

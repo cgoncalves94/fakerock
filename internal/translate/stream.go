@@ -41,14 +41,16 @@ func (s *Stream) Chunk(chunk openai.ChatChunk) ([]bedrock.Event, error) {
 		return nil, fmt.Errorf("backend stream failed: %s", chunk.Error.Message)
 	}
 
-	events := s.start()
 	if chunk.Usage != nil {
 		s.usage = *chunk.Usage
 	}
+	// A chunk without choices, such as the usage chunk, starts nothing. Until a choice arrives no
+	// event is sent, so a backend that never answers still fails as a normal error.
 	if len(chunk.Choices) == 0 {
-		return events, nil
+		return nil, nil
 	}
 	choice := chunk.Choices[0]
+	events := s.start()
 
 	if choice.Delta.Content != "" {
 		if s.open != textBlock {
@@ -80,14 +82,16 @@ func (s *Stream) Chunk(chunk openai.ChatChunk) ([]bedrock.Event, error) {
 	return events, nil
 }
 
-// Finish closes the open block and ends the message. latency is the whole generation.
+// Finish closes the open block and ends the message. latency is the whole generation. A stream
+// that never carried a choice fails with ErrNoChoices, as Converse does.
 func (s *Stream) Finish(latency time.Duration) ([]bedrock.Event, error) {
-	events := s.start()
-	closing, err := s.closeBlock()
+	if !s.started {
+		return nil, ErrNoChoices
+	}
+	events, err := s.closeBlock()
 	if err != nil {
 		return nil, err
 	}
-	events = append(events, closing...)
 	return append(events,
 		bedrock.Event{Type: bedrock.EventMessageStop, Payload: bedrock.MessageStop{
 			StopReason: stopReason(s.finishReason, s.sawToolCall),

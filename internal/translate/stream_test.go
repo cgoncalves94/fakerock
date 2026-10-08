@@ -1,6 +1,7 @@
 package translate
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -217,12 +218,17 @@ func TestStreamGatewayErrorChunk(t *testing.T) {
 	}
 }
 
-func TestStreamEmptyResponse(t *testing.T) {
-	events := feed(t)
+// Converse fails with ErrNoChoices when the backend answers without choices, so the stream must
+// too, and before any event so the caller still gets a normal error.
+func TestStreamWithoutChoicesFails(t *testing.T) {
+	var stream Stream
+	events, err := stream.Chunk(openai.ChatChunk{Usage: &openai.Usage{PromptTokens: 3, TotalTokens: 3}})
+	if err != nil || len(events) != 0 {
+		t.Fatalf("usage-only chunk gave events %v, err %v; want none", eventTypes(events), err)
+	}
 
-	want := []string{bedrock.EventMessageStart, bedrock.EventMessageStop, bedrock.EventMetadata}
-	if got := eventTypes(events); strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("events = %v, want %v", got, want)
+	if _, err := stream.Finish(time.Second); !errors.Is(err, ErrNoChoices) {
+		t.Errorf("err = %v, want ErrNoChoices", err)
 	}
 }
 

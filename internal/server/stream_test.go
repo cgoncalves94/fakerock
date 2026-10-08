@@ -247,6 +247,16 @@ func TestConverseStreamBackendFailureIsAnAWSError(t *testing.T) {
 	assertAWSError(t, rec, http.StatusBadGateway, errModel)
 }
 
+func TestConverseStreamWithoutChoicesIsAnAWSError(t *testing.T) {
+	srv := newTestServer(t, &stubBackend{chunks: []openai.ChatChunk{
+		{Usage: &openai.Usage{PromptTokens: 3, TotalTokens: 3}},
+	}})
+
+	rec := post(t, srv, "/model/sonnet/converse-stream", `{"messages":[{"role":"user","content":[{"text":"hi"}]}]}`)
+
+	assertAWSError(t, rec, http.StatusBadGateway, errModel)
+}
+
 func TestConverseStreamFailureMidStreamSendsException(t *testing.T) {
 	srv := newTestServer(t, &stubBackend{
 		chunks: []openai.ChatChunk{textChunk("partial")},
